@@ -170,4 +170,7 @@ trap - EXIT
 rm -rf "$ROOT"/tmp/* "$ROOT"/root/.npm "$ROOT"/root/.cache 2>/dev/null || true
 tar -C "$ROOT" --numeric-owner -czf "$OUT/rootfs.tar.gz" .
 ls -lh "$OUT/rootfs.tar.gz"
+# rootfs 是 root 拥有的（含 700 的 /root），留着会让后续 setup-gradle 扫描工作区时报 EACCES
+rm -rf "$ROOT"
+chmod -R a+rX "$OUT" 2>/dev/null || true
 echo "完成：$OUT/rootfs.tar.gz"

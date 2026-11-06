@@ -28,3 +28,4 @@ chmod +x "$OUT/proot"
 file "$OUT/proot" || true
 "$OUT/proot" --version || true
 ls -lh "$OUT/proot"
+chmod -R a+rX "$OUT" 2>/dev/null || true
