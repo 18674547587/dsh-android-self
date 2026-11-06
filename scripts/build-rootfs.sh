@@ -5,7 +5,7 @@ set -euo pipefail
 
 UBUNTU_VER="${UBUNTU_VER:-24.04.3}"
 NODE_VER="${NODE_VER:-22.20.0}"
-DSH_VER="${DSH_VER:-0.2.1-rc.2}"
+DSH_VER="${DSH_VER:-0.2.2-rc.1}"
 OUT="${OUT:-$PWD/dist}"
 ROOT="${ROOT:-$PWD/rootfs}"
 mkdir -p "$OUT"

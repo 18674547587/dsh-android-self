@@ -7,7 +7,7 @@ on:
     inputs:
       dsh_version:
         description: "npm 上的 dsh 版本"
-        default: "0.2.1-rc.2"
+        default: "0.2.2-rc.1"
       node_version:
         description: "Node 版本"
         default: "22.20.0"
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     env:
-      DSH_VER: ${{ github.event.inputs.dsh_version || '0.2.1-rc.2' }}
+      DSH_VER: ${{ github.event.inputs.dsh_version || '0.2.2-rc.1' }}
       NODE_VER: ${{ github.event.inputs.node_version || '22.20.0' }}
 
     steps:
