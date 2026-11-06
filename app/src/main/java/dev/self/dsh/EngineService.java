@@ -139,6 +139,9 @@ public class EngineService extends Service {
             rm.installProot();
             log("proot 已就位");
 
+            ProotLauncher.ensureSshKey(this);
+            log("SSH 密钥就绪");
+
             state = "启动引擎";
             notifyState(state);
             log("proot 启动中…");

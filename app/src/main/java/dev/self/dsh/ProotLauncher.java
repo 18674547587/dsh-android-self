@@ -19,6 +19,39 @@ final class ProotLauncher {
         return f;
     }
 
+
+    /** 首次启动生成 ed25519 密钥（只生成一次），供 ssh vps 使用。 */
+    static void ensureSshKey(Context ctx) {
+        File rootfs = new RootfsManager(ctx).rootfsDir();
+        File key = new File(rootfs, "root/.ssh/id_ed25519");
+        if (key.isFile()) return;
+        try {
+            List<String> cmd = new ArrayList<>();
+            cmd.add(prootBinary(ctx).getAbsolutePath());
+            cmd.add("--link2symlink");
+            cmd.add("-0");
+            cmd.add("-r"); cmd.add(rootfs.getAbsolutePath());
+            cmd.add("-b"); cmd.add("/dev");
+            cmd.add("-b"); cmd.add("/proc");
+            cmd.add("-b"); cmd.add("/sys");
+            cmd.add("-w"); cmd.add("/root");
+            cmd.add("/bin/sh");
+            cmd.add("-c");
+            cmd.add("mkdir -p /root/.ssh && chmod 700 /root/.ssh && " +
+                    "ssh-keygen -t ed25519 -N '' -C dsh-android -f /root/.ssh/id_ed25519 && " +
+                    "chmod 600 /root/.ssh/id_ed25519");
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.environment().put("PROOT_TMP_DIR",
+                    new File(ctx.getFilesDir(), "proot-tmp").getAbsolutePath());
+            pb.environment().put("PROOT_NO_SECCOMP", "1");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            p.waitFor(90, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            EngineService.log("生成 SSH 密钥失败: " + e);
+        }
+    }
+
     static Process start(Context ctx, int port) throws IOException {
         File rootfs = new RootfsManager(ctx).rootfsDir();
         File proot = prootBinary(ctx);

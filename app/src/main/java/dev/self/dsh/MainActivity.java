@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
         status.setGravity(Gravity.CENTER_VERTICAL);
         status.setText("正在启动…");
         status.setOnClickListener(v -> showLog());
+        status.setOnLongClickListener(v -> { showSshKey(); return true; });
         root.addView(status, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -122,6 +123,38 @@ public class MainActivity extends Activity {
                 try { Thread.sleep(ok ? 3000 : 1000); } catch (InterruptedException e) { return; }
             }
         }, "port-poll").start();
+    }
+
+    /** 长按状态条：显示公钥，方便复制到 VPS 的 authorized_keys。 */
+    private void showSshKey() {
+        java.io.File pub = new java.io.File(
+                new RootfsManager(this).rootfsDir(), "root/.ssh/id_ed25519.pub");
+        String text;
+        if (pub.isFile()) {
+            try {
+                byte[] b = new byte[(int) pub.length()];
+                java.io.FileInputStream in = new java.io.FileInputStream(pub);
+                int n = in.read(b);
+                in.close();
+                text = new String(b, 0, Math.max(n, 0), java.nio.charset.StandardCharsets.UTF_8).trim();
+            } catch (java.io.IOException e) {
+                text = "读取失败: " + e;
+            }
+        } else {
+            text = "公钥尚未生成（引擎首次启动后才会生成）";
+        }
+        final String key = text;
+        new AlertDialog.Builder(this)
+                .setTitle("SSH 公钥（ssh vps）")
+                .setMessage(key + "\n\n点「复制」后粘到 VPS 的 ~/.ssh/authorized_keys")
+                .setPositiveButton("复制", (d, w) -> {
+                    android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText("ssh pub", key));
+                })
+                .setNegativeButton("关闭", null)
+                .show();
     }
 
     private void showLog() {
