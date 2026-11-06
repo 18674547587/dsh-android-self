@@ -29,7 +29,7 @@ public class EngineService extends Service {
     private static final int NOTI_ID = 1001;
     static final int PORT = 3080;
     /** 换 rootfs 内容时改这个串，触发重新解压 */
-    static final String RUNTIME_VERSION = "ubuntu24.04-node22.20-dsh0.2.2-rc.1-r1";
+    static final String RUNTIME_VERSION = "ubuntu24.04-node24.22-dsh0.2.2-rc.1-r2";
 
     static volatile String state = "未启动";
     static volatile boolean running = false;

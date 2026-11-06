@@ -4,7 +4,7 @@
 set -euo pipefail
 
 UBUNTU_VER="${UBUNTU_VER:-24.04.3}"
-NODE_VER="${NODE_VER:-22.20.0}"
+NODE_VER="${NODE_VER:-24.22.2}"
 DSH_VER="${DSH_VER:-0.2.2-rc.1}"
 OUT="${OUT:-$PWD/dist}"
 ROOT="${ROOT:-$PWD/rootfs}"
@@ -43,6 +43,8 @@ chroot "$ROOT" /usr/bin/env -i \
       openssh-client rsync nano vim-tiny tmux htop ncdu \
       tzdata locales sudo bash-completion
     apt-get clean
+    # lists 实测 206MB，压缩后仍占几十 MB；删掉，改用 apti（自动 update 再装）
+    rm -rf /var/lib/apt/lists/*
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
     echo "C.UTF-8 UTF-8" > /etc/locale.gen
     locale-gen || true
@@ -73,6 +75,16 @@ chroot "$ROOT" /usr/bin/env -i HOME=/root \
     npm install -g pnpm@latest
     npm cache clean --force || true
 "
+
+# 手机端装工具的统一入口（lists 已删，自动先 update）
+cat > "$ROOT/usr/local/bin/apti" <<'EOS'
+#!/bin/sh
+# 用法: apti git tmux   —— 自动 apt update 后安装
+set -e
+apt-get update -qq
+exec apt-get install -y --no-install-recommends "$@"
+EOS
+chmod +x "$ROOT/usr/local/bin/apti"
 
 echo "==> 5.5/6 预置 SSH 客户端配置（方案 A：手机直接 ssh 到 VPS）"
 mkdir -p "$ROOT/root/.ssh"
@@ -121,8 +133,12 @@ chroot "$ROOT" /usr/bin/env -i HOME=/root \
     done
     [ "$OK" = 0 ] && echo "SMOKE_FAIL 端口未起来"
     echo "--- HTTP 状态 ---"
-    curl -s -o /dev/null -w "root=%{http_code}\n" http://127.0.0.1:3080/ 2>/dev/null
-    curl -s -o /dev/null -w "plugin=%{http_code}\n" http://127.0.0.1:3080/plugins/dsh-mobile-adapt/client.js 2>/dev/null
+    TOKEN=$(grep -o "token=[A-Za-z0-9_-]*" /tmp/smoke.log | head -1 | cut -d= -f2)
+    echo "token=${TOKEN:0:8}…"
+    curl -s -o /dev/null -w "root=%{http_code}\n" "http://127.0.0.1:3080/?token=$TOKEN" 2>/dev/null
+    curl -s -o /dev/null -w "plugin=%{http_code}\n" "http://127.0.0.1:3080/plugins/dsh-mobile-adapt/client.js?token=$TOKEN" 2>/dev/null
+    echo "--- 插件是否进 loader（看 cordis 输出）---"
+    grep -i "mobile-adapt\|plugin" /tmp/smoke.log | head -10
     echo "--- ~/.dsh 结构 ---"
     find /root/.dsh -maxdepth 3 2>/dev/null | head -40
     echo "--- 日志尾部 ---"
@@ -132,7 +148,9 @@ chroot "$ROOT" /usr/bin/env -i HOME=/root \
 '
 set -e
 
-echo "==> 6/6 清理并打包"
+echo "==> 6/6 卸载挂载点、清理并打包"
+umount -R "$ROOT/proc" "$ROOT/sys" "$ROOT/dev" 2>/dev/null || true
+trap - EXIT
 rm -rf "$ROOT"/tmp/* "$ROOT"/root/.npm "$ROOT"/root/.cache 2>/dev/null || true
 tar -C "$ROOT" --numeric-owner -czf "$OUT/rootfs.tar.gz" .
 ls -lh "$OUT/rootfs.tar.gz"
