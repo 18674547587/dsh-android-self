@@ -1,0 +1,88 @@
+name: build-apk
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      dsh_version:
+        description: "npm 上的 dsh 版本"
+        default: "0.2.1-rc.2"
+      node_version:
+        description: "Node 版本"
+        default: "22.20.0"
+
+jobs:
+  build:
+    # 必须是 arm64 原生 runner：rootfs 里的 node/proot 都要在 arm64 上跑起来验证
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      DSH_VER: ${{ github.event.inputs.dsh_version || '0.2.1-rc.2' }}
+      NODE_VER: ${{ github.event.inputs.node_version || '22.20.0' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 磁盘余量（构建前）
+        run: df -h / /mnt 2>/dev/null | head -5
+
+      - name: 1) 构建 Ubuntu rootfs + Node + dsh
+        run: sudo -E bash scripts/build-rootfs.sh
+        env:
+          DSH_VER: ${{ env.DSH_VER }}
+          NODE_VER: ${{ env.NODE_VER }}
+
+      - name: 2) 编译静态 proot（termux fork）
+        run: sudo -E bash scripts/build-proot.sh
+
+      - name: 3) 装配 assets
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets/proot
+          cp dist/rootfs.tar.gz app/src/main/assets/rootfs.tar.gz
+          cp dist/proot app/src/main/assets/proot/proot
+          if [ -f dist/loader ]; then cp dist/loader app/src/main/assets/proot/loader; fi
+          chmod +x app/src/main/assets/proot/proot
+          ls -lh app/src/main/assets app/src/main/assets/proot
+          du -sh app/src/main/assets
+
+      - name: 4) JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 5) Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'   # AGP 8.5.2 与 Gradle 9 不兼容
+
+      - name: 6) 构建 APK
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        run: gradle :app:assembleRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx6g
+
+      - name: 7) 校验产物
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          ls -lh "$APK"
+          sha256sum "$APK" | tee apk.sha256
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      - name: 8) 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-self-${{ env.DSH_VER }}
+          path: |
+            app/build/outputs/apk/release/*.apk
+            apk.sha256
+          retention-days: 14
+
+      - name: 9) 日志留档（失败也留）
+        if: always()
+        run: |
+          echo "== rootfs 目录 =="; ls -lh dist 2>/dev/null || true
+          echo "== gradle 缓存 =="; du -sh ~/.gradle 2>/dev/null || true
