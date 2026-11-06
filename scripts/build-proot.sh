@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 在 arm64 Linux 上编译静态 proot（termux fork，含 Android seccomp/SELinux 相关修补）。
-# 产物：dist/proot（静态、无 libtalloc 依赖）
+# 在 arm64 Linux 上编译静态 proot（termux fork，含 Android seccomp/SELinux 修补）。
+# 产物：dist/proot（静态、内嵌 loader、不依赖 libtalloc.so）
 set -euo pipefail
 OUT="${OUT:-$PWD/dist}"
 SRC="${SRC:-$PWD/.cache/proot}"
@@ -14,14 +14,16 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq build-essential libtalloc-dev pkg-config
 
 cd "$SRC/src"
-make -j"$(nproc)" loader.elf
-# 静态链接：termux fork 的 Makefile 支持 LDFLAGS 覆盖
-make -j"$(nproc)" LDFLAGS="-static -ltalloc" proot || make -j"$(nproc)" LDFLAGS="-static" proot
+
+# arm64 的 arch.h 里 HAS_LOADER_32BIT=true，会去编 32 位 loader（需要 -m32 与 armhf 库）。
+# 我们只跑 arm64 的 node，不需要 32 位支持，删掉这一行即可。
+sed -i '/#define HAS_LOADER_32BIT true/d' arch.h
+grep -c "HAS_LOADER_32BIT" arch.h || true
+
+# 默认目标 proot 会先构建并内嵌 loader/loader（不需要单独的 loader.elf 目标）
+make -j"$(nproc)" LDFLAGS="-static -ltalloc" proot
 
 cp -f proot "$OUT/proot"
-# proot 需要配套 loader（非静态部分），一并带走
-if [ -f loader.elf ]; then cp -f loader.elf "$OUT/loader"; fi
-ls -lh "$OUT" | sed -n '1,10p' 
 chmod +x "$OUT/proot"
 file "$OUT/proot" || true
 "$OUT/proot" --version || true

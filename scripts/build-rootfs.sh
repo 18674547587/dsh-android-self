@@ -76,6 +76,22 @@ chroot "$ROOT" /usr/bin/env -i HOME=/root \
     npm cache clean --force || true
 "
 
+echo "==> 5.2/6 瘦身：清掉编译工具链与文档（apti 可随时装回）"
+chroot "$ROOT" /usr/bin/env -i HOME=/root \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  DEBIAN_FRONTEND=noninteractive \
+  /bin/bash -euxo pipefail -c '
+    # dsh 的 node-pty 已经编好了，编译器不再需要；用户要装东西时 apti 会装回
+    apt-get purge -y build-essential gcc g++ make cmake autoconf automake libtool pkg-config cpp
+    apt-get autoremove -y
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/* /tmp/*
+    rm -rf /usr/share/locale/* || true
+    echo "--- 瘦身后占用 ---"
+    du -sh /usr /usr/local /root 2>/dev/null
+    du -sh / 2>/dev/null || true
+'
+
 # 手机端装工具的统一入口（lists 已删，自动先 update）
 cat > "$ROOT/usr/local/bin/apti" <<'EOS'
 #!/bin/sh
