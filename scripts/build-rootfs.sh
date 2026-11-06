@@ -96,6 +96,42 @@ SSHCFG
 echo '8.216.42.211 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOEZmCaksdieUxb6/1GsFzNXsBT3MqRnre6dGUxyuWCJ' > "$ROOT/root/.ssh/known_hosts"
 chmod 600 "$ROOT/root/.ssh/config" "$ROOT/root/.ssh/known_hosts"
 
+echo "==> 5.6/6 安装移动端适配插件 dsh-mobile-adapt"
+DSH_HOME_DIR="$ROOT/root/.dsh"
+mkdir -p "$DSH_HOME_DIR/profiles/node_modules" "$DSH_HOME_DIR/profiles/web"
+rm -rf "$DSH_HOME_DIR/profiles/node_modules/dsh-mobile-adapt"
+cp -r "$PWD/rootfs-overlay/dsh-mobile-adapt" "$DSH_HOME_DIR/profiles/node_modules/"
+# 两个层级都写：profile 层是文档里的正式位置，home 层兜底（不同版本 profile 名可能不同）
+printf -- "- insert:\n    - id: mobile-adapt\n      name: 'dsh-mobile-adapt'\n" \
+  | tee "$DSH_HOME_DIR/profiles/web/cordis.patch.yml" > "$DSH_HOME_DIR/cordis.patch.yml"
+find "$DSH_HOME_DIR" -maxdepth 4 | sed 's/^/    /'
+
+echo "==> 5.7/6 冒烟测试：chroot 里真起一次 dsh web（失败不阻断构建，只留诊断）"
+set +e
+chroot "$ROOT" /usr/bin/env -i HOME=/root \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  /bin/bash -c '
+    cd /root
+    /usr/local/bin/node /usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open > /tmp/smoke.log 2>&1 &
+    PID=$!
+    OK=0
+    for i in $(seq 1 45); do
+      sleep 1
+      if (exec 3<>/dev/tcp/127.0.0.1/3080) 2>/dev/null; then echo "SMOKE_OK ${i}s"; OK=1; break; fi
+    done
+    [ "$OK" = 0 ] && echo "SMOKE_FAIL 端口未起来"
+    echo "--- HTTP 状态 ---"
+    curl -s -o /dev/null -w "root=%{http_code}\n" http://127.0.0.1:3080/ 2>/dev/null
+    curl -s -o /dev/null -w "plugin=%{http_code}\n" http://127.0.0.1:3080/plugins/dsh-mobile-adapt/client.js 2>/dev/null
+    echo "--- ~/.dsh 结构 ---"
+    find /root/.dsh -maxdepth 3 2>/dev/null | head -40
+    echo "--- 日志尾部 ---"
+    tail -40 /tmp/smoke.log 2>/dev/null
+    kill $PID 2>/dev/null
+    wait 2>/dev/null
+'
+set -e
+
 echo "==> 6/6 清理并打包"
 rm -rf "$ROOT"/tmp/* "$ROOT"/root/.npm "$ROOT"/root/.cache 2>/dev/null || true
 tar -C "$ROOT" --numeric-owner -czf "$OUT/rootfs.tar.gz" .

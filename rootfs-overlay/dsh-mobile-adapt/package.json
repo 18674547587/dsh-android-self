@@ -1,0 +1,25 @@
+{
+  "name": "dsh-mobile-adapt",
+  "version": "1.0.0",
+  "description": "DSH Web UI 移动端适配插件：窄屏抽屉式导航、全屏详情栏、安全区与动态视口适配",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "immediately": false
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "mobile",
+    "responsive"
+  ],
+  "license": "MIT"
+}

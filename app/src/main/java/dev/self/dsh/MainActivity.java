@@ -14,6 +14,8 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -24,10 +26,31 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 
-/** 单 Activity：WebView 装官方 UI，顶部一条自绘状态栏。 */
+/**
+ * WebView 壳。移动端适配分两层：
+ *   壳层（本文件）：视口、缩放、软键盘、返回栈、WebView 版本体检；
+ *   页面层（dsh-mobile-adapt 插件）：三栏 grid -> 抽屉、详情栏全屏、触摸热区。
+ */
 public class MainActivity extends Activity {
 
     private static final int REQ_PERM = 10;
+
+    /** 页面加载后注入：补 viewport、键盘遮挡时把输入框滚进可视区、打 Android 标记。 */
+    private static final String INJECT_JS =
+            "(function(){" +
+            "  var d=document.documentElement;" +
+            "  d.setAttribute('data-dshm-android','1');" +
+            "  var m=document.querySelector('meta[name=viewport]');" +
+            "  if(!m){m=document.createElement('meta');m.name='viewport';document.head.appendChild(m);}" +
+            "  if(!/viewport-fit/.test(m.content)){m.content='width=device-width, initial-scale=1, viewport-fit=cover';}" +
+            "  if(!window.__dshmKeyboardHooked){" +
+            "    window.__dshmKeyboardHooked=1;" +
+            "    document.addEventListener('focusin',function(e){" +
+            "      var t=e.target; if(!t||!t.scrollIntoView) return;" +
+            "      setTimeout(function(){try{t.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){}} ,350);" +
+            "    },true);" +
+            "  }" +
+            "})();";
 
     private WebView web;
     private TextView status;
@@ -39,15 +62,18 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // 软键盘：压缩布局而不是整体上推，WebView 才能跟着缩
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
 
         status = new TextView(this);
-        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         status.setTextColor(Color.WHITE);
         status.setBackgroundColor(0xFF1B4DCC);
-        status.setPadding(dp(12), dp(8), dp(12), dp(8));
+        status.setPadding(dp(12), dp(7), dp(12), dp(7));
         status.setGravity(Gravity.CENTER_VERTICAL);
         status.setText("正在启动…");
         status.setOnClickListener(v -> showLog());
@@ -60,12 +86,30 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
-        s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
+        // 系统字体放大不能改页面字号，否则三栏布局会被撑破
+        s.setTextZoom(100);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(true);
-        web.setWebViewClient(new WebViewClient());
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+：跟随系统深色
+            try { WebSettings.class.getMethod("setForceDark", int.class)
+                    .invoke(s, 2 /* FORCE_DARK_AUTO */); } catch (Exception ignored) { }
+        }
+        web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         web.setBackgroundColor(Color.WHITE);
+        web.setWebChromeClient(new WebChromeClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                view.evaluateJavascript(INJECT_JS, null);
+            }
+        });
         root.addView(web, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -78,6 +122,15 @@ public class MainActivity extends Activity {
 
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density);
+    }
+
+    /** WebView 版本体检：Android 10 上系统 WebView 可能很旧，dsh 前端吃新特性。 */
+    private String webViewVersion() {
+        try {
+            android.content.pm.PackageInfo pi = WebView.getCurrentWebViewPackage();
+            if (pi != null) return pi.versionName;
+        } catch (Exception ignored) { }
+        return "未知";
     }
 
     private void askPermissions() {
@@ -114,7 +167,7 @@ public class MainActivity extends Activity {
                 }
                 final boolean ok = alive;
                 ui.post(() -> {
-                    status.setText(EngineService.state);
+                    status.setText(EngineService.state + "   ·   WebView " + webViewVersion());
                     if (ok && !loaded) {
                         loaded = true;
                         web.loadUrl("http://127.0.0.1:" + EngineService.PORT + "/");
@@ -160,7 +213,9 @@ public class MainActivity extends Activity {
     private void showLog() {
         new AlertDialog.Builder(this)
                 .setTitle("引擎状态")
-                .setMessage(EngineService.state + "\n\n" + EngineService.logTail(40))
+                .setMessage(EngineService.state
+                        + "\nWebView: " + webViewVersion()
+                        + "\n\n" + EngineService.logTail(40))
                 .setPositiveButton("关闭", null)
                 .setNeutralButton("重启引擎", (d, w) -> {
                     Intent stop = new Intent(this, EngineService.class).setAction("stop");

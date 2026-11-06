@@ -1,0 +1,13 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+
+# ── 移动端适配插件（dsh-mobile-adapt）─────────────────────────────────
+# 窄屏（≤1024px，与 DSH 自己的 SIDEBAR_AUTO_COLLAPSE 阈值一致）下：
+#   三栏 grid → 抽屉式侧栏 + 全屏详情栏；设置面板 → 整屏 + 顶部横向 tab；
+#   另含安全区、动态视口、触摸热区适配。
+# 排障开关：?dshm=on 强制启用 / ?dshm=off 强制禁用。
+# 见 ~/.dsh/profiles/node_modules/dsh-mobile-adapt/
+- insert:
+    - id: mobile-adapt
+      name: 'dsh-mobile-adapt'
