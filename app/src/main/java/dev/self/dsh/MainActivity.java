@@ -108,6 +108,9 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 view.evaluateJavascript(INJECT_JS, null);
+                // 移动端适配：假 loader + client.js，不依赖 dsh 插件系统
+                view.evaluateJavascript(readAsset("dshm-boot.js"), null);
+                view.evaluateJavascript(readAsset("dshm-client.js"), null);
             }
         });
         root.addView(web, new LinearLayout.LayoutParams(
@@ -118,6 +121,19 @@ public class MainActivity extends Activity {
         askPermissions();
         startEngine();
         pollPort();
+    }
+
+    /** 读 assets 里的文本资源（注入脚本用）。 */
+    private String readAsset(String name) {
+        try (java.io.InputStream in = getAssets().open(name);
+             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return out.toString("UTF-8");
+        } catch (java.io.IOException e) {
+            return "console.error('[dshm] asset missing: " + name + "');";
+        }
     }
 
     private int dp(int v) {
