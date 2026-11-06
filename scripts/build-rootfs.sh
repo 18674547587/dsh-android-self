@@ -87,6 +87,13 @@ chroot "$ROOT" /usr/bin/env -i HOME=/root \
     apt-get clean
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/* /tmp/*
     rm -rf /usr/share/locale/* || true
+    # node_modules 里的文档/类型/映射/测试对运行无用（实测 rootfs 未压缩 1.5G，主要在这）
+    NM=/usr/local/lib/node_modules
+    find $NM -name "*.md" -delete 2>/dev/null || true
+    find $NM -name "*.map" -delete 2>/dev/null || true
+    find $NM -name "*.d.ts" -delete 2>/dev/null || true
+    find $NM -type d \( -name test -o -name tests -o -name docs -o -name example -o -name examples \) -prune -exec rm -rf {} + 2>/dev/null || true
+    find $NM -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true
     echo "--- 瘦身后占用 ---"
     du -sh /usr /usr/local /root 2>/dev/null
     du -sh / 2>/dev/null || true

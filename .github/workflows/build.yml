@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p app/src/main/assets/proot
-          cp dist/rootfs.tar.gz app/src/main/assets/rootfs.tar.gz
+          cp dist/rootfs.tar.gz app/src/main/assets/rootfs.bin   # 不能叫 .gz：aapt2 会自动解压并改名
           cp dist/proot app/src/main/assets/proot/proot
           chmod +x app/src/main/assets/proot/proot
           ls -lh app/src/main/assets app/src/main/assets/proot

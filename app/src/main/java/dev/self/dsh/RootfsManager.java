@@ -54,7 +54,7 @@ final class RootfsManager {
 
         if (l != null) l.onStage("解压 Ubuntu 运行时（首次约 3~8 分钟）");
         AssetManager am = ctx.getAssets();
-        try (InputStream in = am.open("rootfs.tar.gz", AssetManager.ACCESS_STREAMING)) {
+        try (InputStream in = am.open("rootfs.bin", AssetManager.ACCESS_STREAMING)) {
             TarGz.extract(in, dir, done -> {
                 if (l != null) l.onBytes(done);
             });
