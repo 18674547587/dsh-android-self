@@ -5,10 +5,12 @@
 set -euo pipefail
 OUT="${OUT:-$PWD/dist}"
 ROOT="${ROOT:-$PWD/rootfs}"
-NODE="$ROOT/usr/local/bin/node"
+# 注意：传给 proot 的必须是 guest 内的路径（/usr/local/bin/node），
+# 不是 host 上的 $ROOT/usr/local/bin/node —— proot 不会替你翻译。
+NODE=/usr/local/bin/node
 
-[ -x "$OUT/proot" ] || { echo "缺少 $OUT/proot"; exit 1; }
-[ -x "$NODE" ]      || { echo "缺少 rootfs 里的 node: $NODE"; exit 1; }
+[ -x "$OUT/proot" ]  || { echo "缺少 $OUT/proot"; exit 1; }
+[ -x "$ROOT$NODE" ]  || { echo "缺少 rootfs 里的 node: $ROOT$NODE"; exit 1; }
 
 gcc -O2 -o /tmp/seccomp-kill2 tools/seccomp-kill2.c
 
