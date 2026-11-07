@@ -97,6 +97,34 @@ jobs:
             apk.sha256
           retention-days: 14
 
+      - name: 12) 上传到 S3 网关（VPS 侧直接取用，免下载 300MB）
+        env:
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_AK: ${{ secrets.S3_AK }}
+          S3_SK: ${{ secrets.S3_SK }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          BUILD_NO: ${{ github.run_number }}
+        run: |
+          python3 -m pip install --quiet boto3
+          python3 - <<'PYEOF'
+          import os, boto3
+          from boto3.s3.transfer import TransferConfig
+          from botocore.config import Config
+          s3 = boto3.client('s3',
+              endpoint_url=os.environ['S3_ENDPOINT'],
+              aws_access_key_id=os.environ['S3_AK'],
+              aws_secret_access_key=os.environ['S3_SK'],
+              config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}))
+          src = 'app/build/outputs/apk/release/app-release.apk'
+          cfg = TransferConfig(multipart_threshold=16*1024*1024,
+                               multipart_chunksize=32*1024*1024, max_concurrency=4)
+          for key in (f"apk/dsh-self-build{os.environ['BUILD_NO']}.apk", "apk/dsh-self-latest.apk"):
+              s3.upload_file(src, os.environ['S3_BUCKET'], key,
+                  ExtraArgs={'ContentType': 'application/vnd.android.package-archive'}, Config=cfg)
+              h = s3.head_object(Bucket=os.environ['S3_BUCKET'], Key=key)
+              print('uploaded', key, h['ContentLength'])
+          PYEOF
+
       - name: 11) 发布到 Release（artifact 下载被限速，改走 release asset）
         uses: softprops/action-gh-release@v2
         with:
