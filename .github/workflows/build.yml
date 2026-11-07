@@ -110,14 +110,18 @@ jobs:
           import os, boto3
           from boto3.s3.transfer import TransferConfig
           from botocore.config import Config
+          from botocore.config import Config as BotoConfig
           s3 = boto3.client('s3',
               endpoint_url=os.environ['S3_ENDPOINT'],
               aws_access_key_id=os.environ['S3_AK'],
               aws_secret_access_key=os.environ['S3_SK'],
-              config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}))
+              config=BotoConfig(signature_version='s3v4', s3={'addressing_style': 'path'},
+                                retries={'max_attempts': 10, 'mode': 'standard'},
+                                read_timeout=120, connect_timeout=20))
           src = 'app/build/outputs/apk/release/app-release.apk'
-          cfg = TransferConfig(multipart_threshold=16*1024*1024,
-                               multipart_chunksize=32*1024*1024, max_concurrency=4)
+          # 32MB/4 并发在 GitHub runner 上实测 503（Worker 处理不过来），改 8MB/1 并发 + 多重试
+          cfg = TransferConfig(multipart_threshold=8*1024*1024,
+                               multipart_chunksize=8*1024*1024, max_concurrency=1)
           for key in (f"apk/dsh-self-build{os.environ['BUILD_NO']}.apk", "apk/dsh-self-latest.apk"):
               s3.upload_file(src, os.environ['S3_BUCKET'], key,
                   ExtraArgs={'ContentType': 'application/vnd.android.package-archive'}, Config=cfg)
