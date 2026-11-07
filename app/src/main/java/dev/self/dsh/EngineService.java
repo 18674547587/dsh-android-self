@@ -124,6 +124,7 @@ public class EngineService extends Service {
 
     private void boot() {
         try {
+            log("dsh 自建版 " + BuildConfig.VERSION_NAME);
             state = "解压运行时";
             notifyState(state);
             RootfsManager rm = new RootfsManager(this);
@@ -142,8 +143,8 @@ public class EngineService extends Service {
             log("proot 已就位");
             prootSelfCheck();
 
-            ProotLauncher.ensureSshKey(this);
-            log("SSH 密钥就绪");
+            boolean sshOk = ProotLauncher.ensureSshKey(this);
+            log(sshOk ? "SSH 密钥就绪" : "SSH 密钥未生成（上一步已失败），继续尝试启动引擎");
 
             state = "启动引擎";
             notifyState(state);
@@ -190,6 +191,7 @@ public class EngineService extends Service {
     private void prootSelfCheck() {
         try {
             File proot = ProotLauncher.prootBinary(this);
+            log("proot " + proot.length() + " 字节 sha256=" + sha256(proot).substring(0, 12));
             List<String> c = new ArrayList<>();
             c.add("/system/bin/env");
             c.add("GLIBC_TUNABLES=glibc.pthread.rseq=0");
@@ -214,6 +216,20 @@ public class EngineService extends Service {
             }
         } catch (Exception e) {
             log("proot 自检异常: " + e);
+        }
+    }
+
+    private static String sha256(File f) {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : md.digest()) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return "?";
         }
     }
 

@@ -51,25 +51,23 @@ scripts/
 
 ## 坑：Android 上「已退出 (159)」
 
-`159 = 128 + 31 = SIGSYS`。Android 的 seccomp 是白名单制、未命中即杀进程，而名单
-是照着发布时内核的 syscall 表生成的：`clone3` 要内核 5.3、`rseq` 要 4.18，所以
-Android 10 及更早的名单里根本没有这两个号。
+`159 = 128 + 31 = SIGSYS`。
 
-Ubuntu 24.04 的 glibc 2.39 偏偏两样都用：`rseq` 在程序启动阶段注册，`clone3` 在
-`pthread_create` 里先试（拿到 `ENOSYS` 才回退 `clone`）。结果 rootfs 里所有 glibc
-程序都活不过初始化。proot 自己是 glibc 静态二进制，同样被 `rseq` 杀掉。
+**机制**：AOSP 的 seccomp 生成器对未列入白名单的 syscall 用的是
+`SECCOMP_RET_TRAP`，不是返回 `ENOSYS`（见 `bionic/libc/seccomp/seccomp_policy.cpp`
+的 `Disallow()`）。所以**只要 syscall 号不在白名单里，进程立刻收 SIGSYS**。
 
-三处修复，缺一不可：
+**为什么踩到**：Android 10 的内核是 4.14/4.19，白名单按当时的 syscall 表生成，
+没有 `rseq(293)`（要 4.18）、没有 `clone3(435)`（要 5.3）。而 Ubuntu 24.04 的
+glibc 2.39 两样都用：`rseq` 在**程序启动阶段**注册，`clone3` 在 `pthread_create`
+里先试。proot 自己是 glibc 静态二进制，启动就死，退出码 159。
 
-| 位置 | 做法 | 解决谁 |
-|---|---|---|
-| `scripts/patch-proot.py` | 在 proot 的 syscall-enter 阶段把 `clone3`/`rseq` 伪造成 `ENOSYS` | rootfs 里的程序 |
-| `ProotLauncher` | `GLIBC_TUNABLES=glibc.pthread.rseq=0` | proot 自己 |
-| `ProotLauncher` | `PROOT_NO_SECCOMP=1` | 让上面那条能生效 |
+**走过的弯路**：把 rseq 调用点改成 `syscall(-1)` 没用 —— `-1` 同样不在白名单里，
+一样 TRAP。（CI 当时的模拟 filter 只 kill 指定号、放行 `-1`，所以假阴性通过了。）
 
-第三条的原因容易被忽略：内核会把多个 seccomp filter 链起来取**最严格**结果，
-Android 的 `KILL` 会先于 proot 加速器的 `TRACE` 生效，只有在纯 ptrace 模式
-（`PTRACE_SYSCALL`）下 proot 才有机会在 seccomp 检查之前改掉 syscall 号。
+**最终方案**：proot 改用 **zig + musl 静态编译**。musl 的启动路径只有
+`set_tid_address / brk / mmap / getpid / ioctl / writev / exit_group`，全部在白名单内，
+从根上不碰 rseq 与 clone3。rootfs 里 glibc 程序的 `clone3/rseq` 仍由 proot 在
+syscall-enter 阶段伪造成 `ENOSYS`（`scripts/patch-proot.py`），伪造用的"空 syscall"
+从 `io_setup(0)` 换成 `getpid(172)`，避免白名单里没有 `io_setup` 的机型。
 
-验证方式（`scripts/smoke-proot.sh`，CI 里每次构建都会跑）：给 runner 装一个
-「clone3/rseq 命中即 SIGSYS」的 filter，再让 proot 去拉 rootfs 里的 node。

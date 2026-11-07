@@ -14,7 +14,11 @@ NODE=/usr/local/bin/node
 
 gcc -O2 -o /tmp/seccomp-kill2 tools/seccomp-kill2.c
 
-echo "==> 探针 0：proot 自己能起来吗（**故意不给 GLIBC_TUNABLES**，验证二进制补丁自保）"
+echo "==> 检查 proot 是 musl 静态二进制（不依赖 glibc 的 rseq 启动路径）"
+file "$OUT/proot"
+"$OUT/proot" --version | head -2
+
+echo "==> 探针 0：proot 在 seccomp 下能起来吗（**故意不给 GLIBC_TUNABLES**）"
 /tmp/seccomp-kill2 "$OUT/proot" --version >/dev/null
 
 echo "==> 探针 1：node 单线程"

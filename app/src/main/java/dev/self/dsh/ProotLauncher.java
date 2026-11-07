@@ -21,10 +21,10 @@ final class ProotLauncher {
 
 
     /** 首次启动生成 ed25519 密钥（只生成一次），供 ssh vps 使用。 */
-    static void ensureSshKey(Context ctx) {
+    static boolean ensureSshKey(Context ctx) {
         File rootfs = new RootfsManager(ctx).rootfsDir();
         File key = new File(rootfs, "root/.ssh/id_ed25519");
-        if (key.isFile()) return;
+        if (key.isFile()) return true;
         try {
             List<String> cmd = new ArrayList<>();
             cmd.add("/system/bin/env");
@@ -55,8 +55,10 @@ final class ProotLauncher {
             int code = done ? p.exitValue() : -1;
             // 这一步也是 proot 的自检：它跑不起来时这里最先露馅
             EngineService.log("SSH 密钥这一步 exit=" + code + (done ? "" : "（超时）"));
+            return code == 0;
         } catch (Exception e) {
             EngineService.log("生成 SSH 密钥失败: " + e);
+            return false;
         }
     }
 

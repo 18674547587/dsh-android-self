@@ -122,4 +122,10 @@ RSEQ_NEW = """\t/* 同上：rseq(2) 要内核 4.18，Android 10 的 seccomp 名�
 sub("src/syscall/enter.c", CLONE3_OLD, CLONE3_NEW)
 sub("src/syscall/enter.c", "\tcase PR_fork:\n", RSEQ_NEW + "\tcase PR_fork:\n")
 
+# 5) proot 伪造 ENOSYS 的手法是把 syscall 号改成 PR_void（枚举值 0 = io_setup）。
+#    Android 10 的 seccomp 白名单里不一定有 io_setup，但一定有 getpid，所以把
+#    PR_void 挪到 172：内核执行的是无害的 getpid，返回值由 proot 在 exit 阶段覆盖。
+sub("src/syscall/sysnums-arm64.h", "\t[ 0 ] = PR_io_setup,\n", "\t[ 0 ] = PR_getpid,\n")
+sub("src/syscall/sysnums-arm64.h", "\t[ 172 ] = PR_getpid,\n", "\t[ 172 ] = PR_void,\n")
+
 print(f"完成，改动 {len(changed)} 个文件")

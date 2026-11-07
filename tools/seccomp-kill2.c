@@ -7,24 +7,37 @@
 #include <linux/seccomp.h>
 #include <linux/filter.h>
 
-/* 模拟 Android 老版本的 seccomp：命中 clone3 / rseq 直接 SIGSYS 杀进程。
- * 用来验证 proot 的补丁是否真的在 seccomp 之前把 syscall 改掉了。 */
+/* 模拟 Android 10 的 seccomp 行为。
+ *
+ * 关键事实：Android 的 seccomp 对**未列入白名单**的 syscall 是
+ * SECCOMP_RET_TRAP（SIGSYS），不是返回 ENOSYS —— 见 AOSP
+ * bionic/libc/seccomp/seccomp_policy.cpp 里的 Disallow()。
+ * 所以退出码 128+31 = 159。
+ *
+ * 这里用「号 >= 400 一律 TRAP」来近似「白名单外」：Android 10 的内核是
+ * 4.14/4.19，syscall 最大号约 290，400 以上的号在它的白名单里一个都没有。
+ * 这样一来：
+ *   - rseq(293)、clone3(435) 会被拦；
+ *   - 把 rseq 改写成 syscall(-1) 也会被拦（-1 当 u32 就是 0xFFFFFFFF >= 400），
+ *     这正是上一版补丁在真机上仍然 159 的原因。
+ */
 
-#if defined(__aarch64__) || defined(__arm__)
-#  define NR_RSEQ 293
-#else
-#  define NR_RSEQ 334
-#endif
-#define NR_CLONE3 435
+#define NR_RSEQ     293
+#define NR_MEMBARRIER 283
+#define NR_FIRST_NEW 400
 
 int main(int argc, char **argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s <cmd...>\n", argv[0]); return 2; }
     struct sock_filter filter[] = {
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NR_CLONE3, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        /* 新 syscall 号（含 -1 = 0xFFFFFFFF）→ TRAP */
+        BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, NR_FIRST_NEW, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+        /* Android 10 白名单里确实没有的几条 */
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NR_RSEQ, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NR_MEMBARRIER, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
     };
     struct sock_fprog prog = { .len = sizeof(filter)/sizeof(filter[0]), .filter = filter };
