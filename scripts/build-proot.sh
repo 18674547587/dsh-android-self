@@ -2,6 +2,8 @@
 # 在 arm64 Linux 上编译静态 proot（termux fork，含 Android seccomp/SELinux 修补）。
 # 产物：dist/proot（静态、内嵌 loader、不依赖 libtalloc.so）
 set -euo pipefail
+# 后面会 cd 到源码目录，先把脚本所在目录记成绝对路径
+HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="${OUT:-$PWD/dist}"
 SRC="${SRC:-$PWD/.cache/proot}"
 mkdir -p "$OUT" "$(dirname "$SRC")"
@@ -17,7 +19,7 @@ sudo apt-get install -y -qq build-essential libtalloc-dev pkg-config
 # SIGSYS 杀进程；而 Ubuntu 24.04 的 glibc 2.39 两者都会用（实测 node 一启动
 # 就 128+31=159）。补丁把它们在 proot 里改成返回 ENOSYS，让 glibc 走回退路径。
 echo "==> 打补丁：clone3/rseq -> ENOSYS"
-python3 "$(dirname "$0")/patch-proot.py" "$SRC"
+python3 "$HERE/patch-proot.py" "$SRC"
 
 cd "$SRC/src"
 
@@ -35,7 +37,7 @@ chmod +x "$OUT/proot"
 # proot 自己是 glibc 静态二进制，glibc 2.35+ 启动时会调 rseq，而 Android 老版本
 # 的 seccomp 白名单没有这个号 —— 不把调用点改掉的话 proot 自己就先 SIGSYS 了。
 echo "==> 打二进制补丁：rseq 调用 -> syscall(-1)"
-python3 "$(dirname "$0")/patch-proot-bin.py" "$OUT/proot"
+python3 "$HERE/patch-proot-bin.py" "$OUT/proot"
 file "$OUT/proot" || true
 "$OUT/proot" --version || true
 ls -lh "$OUT/proot"
