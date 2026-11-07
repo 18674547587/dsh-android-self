@@ -18,7 +18,9 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /** 前台服务：解压运行时 -> 起 proot -> 保活 -> 收集日志。 */
@@ -138,6 +140,7 @@ public class EngineService extends Service {
 
             rm.installProot();
             log("proot 已就位");
+            prootSelfCheck();
 
             ProotLauncher.ensureSshKey(this);
             log("SSH 密钥就绪");
@@ -176,6 +179,41 @@ public class EngineService extends Service {
         } finally {
             running = false;
             releaseWake();
+        }
+    }
+
+    /**
+     * proot 二进制自检：它自己是 glibc 静态二进制，Android 老版本的 seccomp
+     * 会因为 rseq 直接把它 SIGSYS 掉（退出码 159），这时后面所有步骤都会失败，
+     * 但日志里看起来只是「引擎退出」。单独跑一次 --version 把话说清楚。
+     */
+    private void prootSelfCheck() {
+        try {
+            File proot = ProotLauncher.prootBinary(this);
+            List<String> c = new ArrayList<>();
+            c.add("/system/bin/env");
+            c.add("GLIBC_TUNABLES=glibc.pthread.rseq=0");
+            c.add(proot.getAbsolutePath());
+            c.add("--version");
+            ProcessBuilder pb = new ProcessBuilder(c);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            BufferedReader r = new BufferedReader(
+                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            int n = 0;
+            while ((line = r.readLine()) != null && n++ < 3) {
+                sb.append(line.trim()).append(" / ");
+            }
+            boolean done = p.waitFor(20, java.util.concurrent.TimeUnit.SECONDS);
+            int code = done ? p.exitValue() : -999;
+            log("proot 自检 exit=" + code + " " + sb);
+            if (code != 0) {
+                log("！！proot 二进制本身起不来（多半被 seccomp 杀了），后面的步骤注定失败");
+            }
+        } catch (Exception e) {
+            log("proot 自检异常: " + e);
         }
     }
 

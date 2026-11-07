@@ -27,6 +27,10 @@ final class ProotLauncher {
         if (key.isFile()) return;
         try {
             List<String> cmd = new ArrayList<>();
+            cmd.add("/system/bin/env");
+            cmd.add("GLIBC_TUNABLES=glibc.pthread.rseq=0");
+            cmd.add("PROOT_NO_SECCOMP=1");
+            cmd.add("PROOT_TMP_DIR=" + new File(ctx.getFilesDir(), "proot-tmp").getAbsolutePath());
             cmd.add(prootBinary(ctx).getAbsolutePath());
             cmd.add("--link2symlink");
             cmd.add("-0");
@@ -47,7 +51,10 @@ final class ProotLauncher {
             pb.environment().put("GLIBC_TUNABLES", "glibc.pthread.rseq=0");
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            p.waitFor(90, java.util.concurrent.TimeUnit.SECONDS);
+            boolean done = p.waitFor(90, java.util.concurrent.TimeUnit.SECONDS);
+            int code = done ? p.exitValue() : -1;
+            // 这一步也是 proot 的自检：它跑不起来时这里最先露馅
+            EngineService.log("SSH 密钥这一步 exit=" + code + (done ? "" : "（超时）"));
         } catch (Exception e) {
             EngineService.log("生成 SSH 密钥失败: " + e);
         }
@@ -67,6 +74,15 @@ final class ProotLauncher {
         tmp.mkdirs();
 
         List<String> cmd = new ArrayList<>();
+        // 用 Android 自带的 /system/bin/env 显式注入环境变量，而不是只靠
+        // ProcessBuilder.environment()。GLIBC_TUNABLES 必须在 exec proot 之前
+        // 就位：proot 是 glibc 静态二进制，glibc 2.35+ 启动时注册 rseq，而
+        // Android 10 的 seccomp 白名单没有 rseq(293)，不关掉 proot 自己先死。
+        cmd.add("/system/bin/env");
+        cmd.add("GLIBC_TUNABLES=glibc.pthread.rseq=0");
+        cmd.add("PROOT_NO_SECCOMP=1");
+        cmd.add("PROOT_TMP_DIR=" + tmp.getAbsolutePath());
+        cmd.add("PROOT_LOADER=" + new File(ctx.getFilesDir(), "proot/loader").getAbsolutePath());
         cmd.add(proot.getAbsolutePath());
         cmd.add("--link2symlink");
         cmd.add("-0");                                  // fake root
