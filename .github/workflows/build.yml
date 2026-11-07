@@ -88,7 +88,7 @@ jobs:
 
       - name: 7.5) 注入 build 号（App 日志里能看出装的是哪个包）
         run: |
-          sed -i "s/versionName = \"0.2.0\"/versionName = \"0.2.0-build${{ github.run_number }}\"/" app/build.gradle.kts
+          sed -i "s/versionName = \"0.2.1\"/versionName = \"0.2.1-build${{ github.run_number }}\"/" app/build.gradle.kts
           grep -n versionName app/build.gradle.kts
 
       - name: 8) 构建 APK

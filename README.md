@@ -71,3 +71,54 @@ glibc 2.39 两样都用：`rseq` 在**程序启动阶段**注册，`clone3` 在 
 syscall-enter 阶段伪造成 `ENOSYS`（`scripts/patch-proot.py`），伪造用的"空 syscall"
 从 `io_setup(0)` 换成 `getpid(172)`，避免白名单里没有 `io_setup` 的机型。
 
+
+## 坑：`proot error: execve("/usr/bin/env"): No such file or directory`
+
+159 修好之后暴露出来的下一个问题。症状很有欺骗性：
+
+- `proot --version` 正常（日志里 `proot 自检 exit=0`）
+- 一进 rootfs 就报 `execve("/usr/bin/env"): No such file or directory` / `execve("/bin/sh")`
+- 但 rootfs 里 `/usr/bin/env`、`/bin/sh`、`/lib/ld-linux-aarch64.so.1` 一个不少
+
+**根因**：`ProotLauncher` 给 proot 传了 `PROOT_LOADER=<files>/proot/loader`，
+而这个文件从来不存在 —— APK 里只有 `assets/proot/proot`，`installProot()`
+里拷贝 `proot/loader` 的异常被 `catch (IOException ignored)` 吞掉了。
+
+proot 的 `get_loader_path()`（`src/execve/enter.c`）是：
+
+```c
+loader_path = loader_path ?: getenv("PROOT_LOADER") ?: extract_loader(tracee, false);
+```
+
+环境变量优先于内嵌 loader。我们的 proot 是 bundled 版（`GNUmakefile` 没定义
+`PROOT_UNBUNDLE_LOADER`，走 `OBJECTS += loader/loader-wrapped.o`），loader 本来
+就内嵌在 proot 里；一旦 `PROOT_LOADER` 指向不存在的文件，`translate_execve_enter()`
+会把 execve 的路径参数**换成那个 loader 路径**，内核 execve → ENOENT。
+
+而 proot 报错时打印的是 `tracee->exe`（guest 路径），不是真正被 execve 的
+loader 路径，所以看起来像 rootfs 缺文件。
+
+**本地复现**（VPS 上编 x86_64 同款 proot，同一份源码与补丁）：
+
+```
+$ PROOT_TMP_DIR=/tmp/pt ./proot -0 -r /tmp/rt /usr/bin/env
+PROOT_TMP_DIR=/tmp/pt ...                      # 正常
+
+$ PROOT_LOADER=/tmp/nope PROOT_TMP_DIR=/tmp/pt ./proot -0 -r /tmp/rt /usr/bin/env
+proot error: execve("/usr/bin/env"): No such file or directory
+proot info: possible causes: ...
+fatal error: see `proot --help`.               # 与真机日志逐字一致
+```
+
+**修法**：
+
+1. 不再设 `PROOT_LOADER`（`ProotLauncher` 两处），让 proot 用内嵌 loader，
+   运行时自己解到 `PROOT_TMP_DIR`。
+2. `PROOT_TMP_DIR` 必须在**任何**一次 proot 调用之前就存在。`ensureSshKey()`
+   以前跑在 `start()` 的 `mkdirs()` 之前，目录不存在 → `extract_loader()` 失败
+   → 同样 ENOENT（这就是日志里 `SSH 密钥这一步 exit=1` 的原因）。
+3. `installProot()` 不再尝试拷贝不存在的 loader，并清掉历史残留。
+4. 新增 `rootfsSelfCheck()`：铺完 proot 立刻用它进 rootfs 跑一次 `/bin/sh`，
+   把 `readlink -f /bin/sh` 和 `ls -l /usr/bin/env /lib/ld-linux-aarch64.so.1`
+   一起打进日志。以后 loader / rootfs / 动态链接器任何一环坏了，在「启动引擎」
+   之前就能看见，不用等到最后一句 `已退出 (1)` 再猜。

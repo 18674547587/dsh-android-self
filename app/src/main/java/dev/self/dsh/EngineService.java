@@ -142,6 +142,7 @@ public class EngineService extends Service {
             rm.installProot();
             log("proot 已就位");
             prootSelfCheck();
+            rootfsSelfCheck();
 
             boolean sshOk = ProotLauncher.ensureSshKey(this);
             log(sshOk ? "SSH 密钥就绪" : "SSH 密钥未生成（上一步已失败），继续尝试启动引擎");
@@ -216,6 +217,49 @@ public class EngineService extends Service {
             }
         } catch (Exception e) {
             log("proot 自检异常: " + e);
+        }
+    }
+
+    /**
+     * 端到端自检：真的用 proot 进 rootfs 跑一次 /bin/sh。
+     *
+     * 二进制自检只能证明 proot 自己起得来；loader、rootfs 结构、动态链接器
+     * 任何一环有问题，都要等到最后「启动引擎」才炸，而 proot 的报错只会说
+     * execve("/usr/bin/env"): No such file or directory —— 看着像缺文件，
+     * 实际可能是 loader 路径不对。这里提前跑，并把关键路径一起打出来。
+     */
+    private void rootfsSelfCheck() {
+        try {
+            File proot = ProotLauncher.prootBinary(this);
+            File rootfs = new RootfsManager(this).rootfsDir();
+            File tmp = ProotLauncher.tmpDir(this);
+            List<String> c = new ArrayList<>();
+            c.add("/system/bin/env");
+            c.add("PROOT_NO_SECCOMP=1");
+            c.add("PROOT_TMP_DIR=" + tmp.getAbsolutePath());
+            c.add(proot.getAbsolutePath());
+            c.add("-0");
+            c.add("-r"); c.add(rootfs.getAbsolutePath());
+            c.add("-w"); c.add("/");
+            c.add("/bin/sh");
+            c.add("-c");
+            c.add("echo SH_OK; readlink -f /bin/sh; " +
+                  "ls -l /usr/bin/env /lib/ld-linux-aarch64.so.1 2>&1");
+            ProcessBuilder pb = new ProcessBuilder(c);
+            pb.environment().put("PROOT_TMP_DIR", tmp.getAbsolutePath());
+            pb.environment().put("PROOT_NO_SECCOMP", "1");
+            pb.environment().remove("PROOT_LOADER");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            String out = ProotLauncher.drain(p, 10);
+            boolean done = p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+            int code = done ? p.exitValue() : -999;
+            log("rootfs 自检 exit=" + code + " " + out);
+            if (code != 0) {
+                log("！！rootfs 里跑不起 /bin/sh，引擎注定失败（上面是 proot 的原话）");
+            }
+        } catch (Exception e) {
+            log("rootfs 自检异常: " + e);
         }
     }
 

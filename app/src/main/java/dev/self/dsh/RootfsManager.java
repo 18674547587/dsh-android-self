@@ -69,18 +69,26 @@ final class RootfsManager {
     }
 
 
-    /** 把 assets/proot/{proot,loader} 铺到私有目录并置可执行位。 */
+    /**
+     * 把 assets/proot/proot 铺到私有目录并置可执行位。
+     *
+     * 只铺 proot 本体：它是 bundled 版（GNUmakefile 未定义
+     * PROOT_UNBUNDLE_LOADER），loader 二进制已经内嵌在 proot 里，
+     * 运行时由 proot 自己解到 PROOT_TMP_DIR。以前这里还试着拷
+     * assets/proot/loader，但 APK 里根本没有这个文件，异常被吞掉，
+     * 于是 ProotLauncher 设的 PROOT_LOADER 指向一个不存在的路径 ——
+     * 所有 execve 都变成 ENOENT（表现为「已退出 (1)」和
+     * execve("/usr/bin/env"): No such file or directory）。
+     */
     void installProot() throws IOException {
         File dir = new File(ctx.getFilesDir(), "proot");
         if (!dir.isDirectory() && !dir.mkdirs()) {
             throw new IOException("无法创建目录: " + dir);
         }
         copyAsset("proot/proot", new File(dir, "proot"), true);
-        try {
-            copyAsset("proot/loader", new File(dir, "loader"), true);
-        } catch (IOException ignored) {
-            // 静态版 proot 可能不需要独立 loader
-        }
+        // 清掉历史版本可能残留的空 loader，避免以后再被误设成 PROOT_LOADER
+        File stale = new File(dir, "loader");
+        if (stale.exists()) stale.delete();
     }
 
     private void copyAsset(String name, File dst, boolean exec) throws IOException {
