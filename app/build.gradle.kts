@@ -10,8 +10,8 @@ android {
         // 关键：targetSdk 28 —— Android 10 起 targetSdk>=29 会禁止从可写数据目录 exec，
         // 而 proot + node 必须能 exec，故锁 28。
         targetSdk = 28
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     // assets 里是已压缩的 rootfs.tar.gz，禁止二次压缩（省构建内存与时间）
