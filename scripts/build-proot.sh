@@ -13,6 +13,12 @@ fi
 sudo apt-get update -qq
 sudo apt-get install -y -qq build-essential libtalloc-dev pkg-config
 
+# Android 10 及更早的 seccomp 白名单里没有 clone3(435)/rseq(293)，命中即
+# SIGSYS 杀进程；而 Ubuntu 24.04 的 glibc 2.39 两者都会用（实测 node 一启动
+# 就 128+31=159）。补丁把它们在 proot 里改成返回 ENOSYS，让 glibc 走回退路径。
+echo "==> 打补丁：clone3/rseq -> ENOSYS"
+python3 "$(dirname "$0")/patch-proot.py" "$SRC"
+
 cd "$SRC/src"
 
 # arm64 的 arch.h 里 HAS_LOADER_32BIT=true，会去编 32 位 loader（需要 -m32 与 armhf 库）。

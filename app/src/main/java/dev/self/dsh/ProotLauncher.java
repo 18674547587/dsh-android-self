@@ -44,6 +44,7 @@ final class ProotLauncher {
             pb.environment().put("PROOT_TMP_DIR",
                     new File(ctx.getFilesDir(), "proot-tmp").getAbsolutePath());
             pb.environment().put("PROOT_NO_SECCOMP", "1");
+            pb.environment().put("GLIBC_TUNABLES", "glibc.pthread.rseq=0");
             pb.redirectErrorStream(true);
             Process p = pb.start();
             p.waitFor(90, java.util.concurrent.TimeUnit.SECONDS);
@@ -94,7 +95,14 @@ final class ProotLauncher {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Map<String, String> env = pb.environment();
         env.put("PROOT_TMP_DIR", tmp.getAbsolutePath());
-        env.put("PROOT_NO_SECCOMP", "1");   // 部分 Android 内核 seccomp 下必须
+        // 纯 ptrace 模式：proot 的 seccomp 加速器在 Android 上没用 —— 内核会把
+        // 多个 seccomp filter 链起来取最严格结果，Android 的 KILL 先于 proot 的
+        // TRACE 生效。只有 PTRACE_SYSCALL 才能在 seccomp 之前改掉 syscall 号。
+        env.put("PROOT_NO_SECCOMP", "1");
+        // proot 自己是 glibc 静态二进制，glibc 2.35+ 启动时会注册 rseq，
+        // 而 Android 10 的 seccomp 白名单没有 rseq(293) —— 不关掉的话
+        // proot 自己就先被 SIGSYS 杀了（退出码同样是 159）。
+        env.put("GLIBC_TUNABLES", "glibc.pthread.rseq=0");
         env.put("PROOT_LOADER", new File(ctx.getFilesDir(), "proot/loader").getAbsolutePath());
         pb.directory(rootfs);
         pb.redirectErrorStream(true);
