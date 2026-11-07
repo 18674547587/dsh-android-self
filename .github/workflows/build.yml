@@ -98,6 +98,7 @@ jobs:
           retention-days: 14
 
       - name: 12) 上传到 S3 网关（VPS 侧直接取用，免下载 300MB）
+        continue-on-error: true
         env:
           S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
           S3_AK: ${{ secrets.S3_AK }}
@@ -130,6 +131,7 @@ jobs:
           PYEOF
 
       - name: 11) 发布到 Release（artifact 下载被限速，改走 release asset）
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
