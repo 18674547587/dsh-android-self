@@ -35,6 +35,14 @@ jobs:
       - name: 2) 编译静态 proot（termux fork）
         run: sudo -E bash scripts/build-proot.sh
 
+      - name: 2.5) 冒烟测试：模拟 Android 老版本 seccomp
+        run: |
+          set -euo pipefail
+          # rootfs 里全是 root 属主（含 700 的 /root），解压和运行都要 sudo
+          sudo rm -rf /tmp/rt && sudo mkdir -p /tmp/rt
+          sudo tar -xzf dist/rootfs.tar.gz -C /tmp/rt
+          sudo -E env OUT="$PWD/dist" ROOT=/tmp/rt bash scripts/smoke-proot.sh
+
       - name: 3) 上传运行时产物
         uses: actions/upload-artifact@v4
         with:
