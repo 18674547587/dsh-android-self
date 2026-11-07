@@ -31,6 +31,11 @@ make -j"$(nproc)" LDFLAGS="-static -ltalloc" proot
 
 cp -f proot "$OUT/proot"
 chmod +x "$OUT/proot"
+
+# proot 自己是 glibc 静态二进制，glibc 2.35+ 启动时会调 rseq，而 Android 老版本
+# 的 seccomp 白名单没有这个号 —— 不把调用点改掉的话 proot 自己就先 SIGSYS 了。
+echo "==> 打二进制补丁：rseq 调用 -> syscall(-1)"
+python3 "$(dirname "$0")/patch-proot-bin.py" "$OUT/proot"
 file "$OUT/proot" || true
 "$OUT/proot" --version || true
 ls -lh "$OUT/proot"

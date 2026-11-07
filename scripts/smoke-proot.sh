@@ -14,8 +14,8 @@ NODE=/usr/local/bin/node
 
 gcc -O2 -o /tmp/seccomp-kill2 tools/seccomp-kill2.c
 
-echo "==> 探针 0：proot 自己能起来吗（glibc 静态二进制 + 关掉 rseq）"
-GLIBC_TUNABLES=glibc.pthread.rseq=0 /tmp/seccomp-kill2 "$OUT/proot" --version >/dev/null
+echo "==> 探针 0：proot 自己能起来吗（**故意不给 GLIBC_TUNABLES**，验证二进制补丁自保）"
+/tmp/seccomp-kill2 "$OUT/proot" --version >/dev/null
 
 echo "==> 探针 1：node 单线程"
 GLIBC_TUNABLES=glibc.pthread.rseq=0 PROOT_NO_SECCOMP=1 \
