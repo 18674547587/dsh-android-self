@@ -14,6 +14,9 @@ android {
         versionName = "0.2.0"
     }
 
+    // AGP 8 默认不生成 BuildConfig，日志里要用 VERSION_NAME 标出 build 号
+    buildFeatures { buildConfig = true }
+
     // assets 里是已压缩的 rootfs.tar.gz，禁止二次压缩（省构建内存与时间）
     androidResources { noCompress += listOf("bin") }
 
