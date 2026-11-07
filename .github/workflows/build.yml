@@ -1,5 +1,8 @@
 name: build-apk
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ main ]
@@ -93,3 +96,17 @@ jobs:
             app/build/outputs/apk/release/*.apk
             apk.sha256
           retention-days: 14
+
+      - name: 11) 发布到 Release（artifact 下载被限速，改走 release asset）
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: DSH 自建版 build ${{ github.run_number }}
+          body: |
+            dsh 0.2.2-rc.1 · Node 24.22.2 · Ubuntu 24.04 rootfs · 静态 proot
+            SHA256 见 apk.sha256
+          files: |
+            app/build/outputs/apk/release/*.apk
+            apk.sha256
+          draft: false
+          prerelease: true
